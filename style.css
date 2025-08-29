@@ -1,0 +1,16 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  text-align: center;
+}
+
+h1 {
+  margin: 10px 0;
+  color: #d81920; /* สีแดง KFC */
+}
+
+#map {
+  width: 100%;
+  height: 90vh; /* กินพื้นที่เกือบเต็มจอ */
+  border-top: 2px solid #ccc;
+}
