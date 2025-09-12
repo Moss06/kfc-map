@@ -19,6 +19,9 @@ function initMap() {
         attribution: '© OpenStreetMap contributors'
     }).addTo(map);
 
+    // เพิ่ม: สร้าง markers array ใหม่ทุกครั้งที่ initMap เพื่อป้องกันซ้ำ
+    markers = [];
+
     // Add store markers
     stores.forEach(store => {
         const marker = L.marker([store.lat, store.lng], {
@@ -47,11 +50,15 @@ function initMap() {
 
 // Show/hide markers by filtered stores
 function updateMarkers(filteredStores) {
-    markers.forEach(({ marker, store }) => {
-        if (filteredStores.some(s => s.id === store.id)) {
-            marker.addTo(map);
-        } else {
-            map.removeLayer(marker);
+    // ซ่อน marker ทั้งหมดก่อน
+    markers.forEach(({ marker }) => {
+        map.removeLayer(marker);
+    });
+    // แสดงเฉพาะ marker ที่อยู่ใน filteredStores
+    filteredStores.forEach(store => {
+        const found = markers.find(m => m.store.id === store.id);
+        if (found) {
+            found.marker.addTo(map);
         }
     });
 }
@@ -78,8 +85,13 @@ function populateStoreList(storesToShow = stores) {
         storeCard.className = 'store-card bg-gray-50 p-4 rounded-lg border hover:shadow-md transition-all cursor-pointer';
         storeCard.onclick = () => showStoreDetail(store.id);
 
+        // เพิ่มชื่อสาขาภาษาไทยและอังกฤษ
+        let displayName = store.thaiName
+            ? store.thaiName + (store.name && store.name !== store.thaiName ? ` (${store.name})` : '')
+            : store.name;
+
         storeCard.innerHTML = `
-            <h4 class="font-semibold text-gray-800 mb-2">${store.name}</h4>
+            <h4 class="font-semibold text-gray-800 mb-2">${displayName}</h4>
             <p class="text-sm text-gray-600 mb-2">${store.address}</p>
             <div class="flex justify-between items-center text-xs">
                 <span class="text-green-600 font-medium">${store.hours}</span>
@@ -107,8 +119,13 @@ window.showStoreDetail = function(storeId) {
     const modalTitle = document.getElementById('modalTitle');
     const modalContent = document.getElementById('modalContent');
     const modalActions = document.getElementById('modalActions');
-    modalTitle.textContent = store.name;
-    
+
+    // เพิ่มชื่อสาขาภาษาไทยและอังกฤษ
+    let displayName = store.thaiName
+        ? store.thaiName + (store.name && store.name !== store.thaiName ? ` (${store.name})` : '')
+        : store.name;
+    modalTitle.textContent = displayName;
+
     const distance = userLocation ? 
         calculateDistance(userLocation.lat, userLocation.lng, store.lat, store.lng) : null;
 
@@ -230,12 +247,21 @@ function getSelectedServices() {
 function setupSearch() {
     const searchInput = document.getElementById('searchInput');
     const clearBtn = document.getElementById('clearSearch');
-    searchInput.addEventListener('input', filterAndShow);
-    clearBtn.addEventListener('click', () => {
-        searchInput.value = '';
-        filterAndShow();
-        searchInput.focus();
-    });
+    if (searchInput) {
+        // ลบ autocomplete และ spellcheck เพื่อไม่ให้ browser เก็บประวัติ
+        searchInput.setAttribute('autocomplete', 'off');
+        searchInput.setAttribute('autocorrect', 'off');
+        searchInput.setAttribute('autocapitalize', 'off');
+        searchInput.setAttribute('spellcheck', 'false');
+        searchInput.addEventListener('input', filterAndShow);
+    }
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            searchInput.value = '';
+            filterAndShow();
+            searchInput.focus();
+        });
+    }
 
     // Filter by service
     document.getElementById('serviceFilters')?.addEventListener('change', filterAndShow);
@@ -244,13 +270,12 @@ function setupSearch() {
         const searchTerm = searchInput.value.trim().toLowerCase();
         const selectedServices = getSelectedServices();
         let filtered = stores.filter(store => {
-            // ค้นหาด้วยชื่อ, ที่อยู่, หรือบริการ
             const matchText = (
-                store.name.toLowerCase().includes(searchTerm) ||
+                (store.thaiName && store.thaiName.toLowerCase().includes(searchTerm)) ||
+                (store.name && store.name.toLowerCase().includes(searchTerm)) ||
                 store.address.toLowerCase().includes(searchTerm) ||
                 store.services.some(s => s.toLowerCase().includes(searchTerm))
             );
-            // filter ด้วยบริการ
             const matchService = selectedServices.length === 0 ||
                 selectedServices.every(sv => store.services.includes(sv));
             return matchText && matchService;
@@ -291,36 +316,58 @@ function renderServiceFilters() {
     storeListSection.insertBefore(container, storeListSection.firstChild);
 }
 
-// โหลดข้อมูล stores.json แล้ว initialize app
+// Fetch store data from JSON file
+async function fetchStoreData() {
+  try {
+    const response = await fetch('stores.json');
+    if (!response.ok) throw new Error('Network response was not ok');
+    const data = await response.json();
+    stores = data.map((item, idx) => ({
+        id: item.ID || idx + 1,
+        name: item.Display_Name || item.Storename_Eng || '', // อังกฤษ
+        thaiName: item.Storename_Thai || '', // เพิ่มเก็บชื่อไทย
+        address: item.Address || '',
+        phone: item.Cellphone || '',
+        hours: item.Weekday_Mon_Fri || item.Weekend_Sat_Sun || '',
+        lat: item.Latitude,
+        lng: item.Longitude,
+        services: [
+            item.Dine_In === 'Yes' ? 'Dine In' : null,
+            item.Take_Away === 'Yes' ? 'Take Away' : null,
+            item.Drive_Thru === 'Yes' ? 'Drive Thru' : null,
+            item.Home_Service === 'Yes' ? 'Delivery' : null
+        ].filter(Boolean)
+    }));
+    initMap();
+    renderServiceFilters();
+    populateStoreList();
+  } catch (error) {
+    showStoreLoadError();
+    console.error('Error fetching store data:', error);
+  } finally {
+    showLoading(false);
+  }
+}
+
+function showStoreLoadError() {
+  // ซ่อน loading overlay ถ้ามี
+  document.getElementById('loadingOverlay').classList.add('hidden');
+  // แสดงข้อความ error ใน storeList
+  const storeList = document.getElementById('storeList');
+  storeList.innerHTML = `
+    <div class="bg-red-100 text-red-700 p-4 rounded-lg text-center">
+      กดปุ่ม "หาสาขาใกล้ฉัน" เพื่อดูรายชื่อสาขาที่ใกล้ฉัน
+    </div>
+  `;
+  document.getElementById('retryLoad').onclick = () => {
+    storeList.innerHTML = '';
+    fetchStoreData();
+  };
+}
+
+// Load store data on DOMContentLoaded
 document.addEventListener('DOMContentLoaded', () => {
     showLoading(true);
-    fetch('stores.json')
-        .then(res => res.json())
-        .then(data => {
-            stores = data.map((item, idx) => ({
-                id: item.ID || idx + 1,
-                name: item.Display_Name || item.Storename_Thai || item.Storename_Eng || '',
-                address: item.Address || '',
-                phone: item.Cellphone || '',
-                hours: item.Weekday_Mon_Fri || item.Weekend_Sat_Sun || '',
-                lat: item.Latitude,
-                lng: item.Longitude,
-                services: [
-                    item.Dine_In === 'Yes' ? 'Dine In' : null,
-                    item.Take_Away === 'Yes' ? 'Take Away' : null,
-                    item.Drive_Thru === 'Yes' ? 'Drive Thru' : null,
-                    item.Home_Service === 'Yes' ? 'Delivery' : null
-                ].filter(Boolean)
-            }));
-            initMap();
-            renderServiceFilters();
-            populateStoreList();
-            setupSearch();
-            showLoading(false);
-        })
-        .catch(err => {
-            alert('เกิดข้อผิดพลาดในการโหลดข้อมูลสาขา');
-            showLoading(false);
-            console.error(err);
-        });
+    fetchStoreData();
+    setupSearch();
 });
