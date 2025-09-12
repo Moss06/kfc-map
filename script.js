@@ -1,60 +1,15 @@
-// Sample KFC store data (ข้อมูลตัวอย่าง)
-const stores = [
-    {
-        id: 1,
-        name: "KFC สยามพารากอน",
-        address: "ชั้น B1 สยามพารากอน 991 ถ.พระราม 1 ปทุมวัน กรุงเทพฯ 10330",
-        phone: "02-129-4545",
-        hours: "10:00 - 22:00",
-        lat: 13.7460,
-        lng: 100.5352,
-        services: ["Drive Thru", "Delivery", "Dine In"]
-    },
-    {
-        id: 2,
-        name: "KFC เซ็นทรัลเวิลด์",
-        address: "ชั้น 7 เซ็นทรัลเวิลด์ 4,4/1-4/2,4/4 ถ.ราชดำริ ปทุมวัน กรุงเทพฯ 10330",
-        phone: "02-255-9500",
-        hours: "10:00 - 22:00",
-        lat: 13.7472,
-        lng: 100.5398,
-        services: ["Delivery", "Dine In"]
-    },
-    {
-        id: 3,
-        name: "KFC MBK เซ็นเตอร์",
-        address: "ชั้น 6 MBK เซ็นเตอร์ 444 ถ.พญาไท ปทุมวัน กรุงเทพฯ 10330",
-        phone: "02-217-9000",
-        hours: "10:00 - 22:00",
-        lat: 13.7441,
-        lng: 100.5300,
-        services: ["Delivery", "Dine In"]
-    },
-    {
-        id: 4,
-        name: "KFC สีลม คอมเพล็กซ์",
-        address: "191 ถ.สีลม บางรัก กรุงเทพฯ 10500",
-        phone: "02-231-2345",
-        hours: "07:00 - 23:00",
-        lat: 13.7307,
-        lng: 100.5418,
-        services: ["Drive Thru", "Delivery", "Dine In"]
-    },
-    {
-        id: 5,
-        name: "KFC เทอร์มินอล 21",
-        address: "ชั้น 5 เทอร์มินอล 21 88 ถ.สุขุมวิท เขตวัฒนา กรุงเทพฯ 10110",
-        phone: "02-108-0888",
-        hours: "10:00 - 22:00",
-        lat: 13.7375,
-        lng: 100.5607,
-        services: ["Delivery", "Dine In"]
-    }
-];
-
+let stores = [];
 let map;
 let markers = [];
 let userLocation = null;
+let currentFilteredStores = [];
+
+function showLoading(show = true) {
+    const overlay = document.getElementById('loadingOverlay');
+    if (!overlay) return;
+    if (show) overlay.classList.remove('hidden');
+    else overlay.classList.add('hidden');
+}
 
 // Initialize map
 function initMap() {
@@ -90,10 +45,30 @@ function initMap() {
     });
 }
 
+// Show/hide markers by filtered stores
+function updateMarkers(filteredStores) {
+    markers.forEach(({ marker, store }) => {
+        if (filteredStores.some(s => s.id === store.id)) {
+            marker.addTo(map);
+        } else {
+            map.removeLayer(marker);
+        }
+    });
+}
+
 // Populate store list
 function populateStoreList(storesToShow = stores) {
+    currentFilteredStores = storesToShow;
     const storeList = document.getElementById('storeList');
     storeList.innerHTML = '';
+
+    if (storesToShow.length === 0) {
+        storeList.innerHTML = '<div class="text-center text-gray-400 py-8">ไม่พบสาขาตามคำค้นหา</div>';
+        updateMarkers([]);
+        return;
+    }
+
+    updateMarkers(storesToShow);
 
     storesToShow.forEach(store => {
         const distance = userLocation ? 
@@ -126,10 +101,12 @@ window.showStoreDetail = function(storeId) {
     const store = stores.find(s => s.id === storeId);
     if (!store) return;
 
+    if (map && map.closePopup) map.closePopup();
+
     const modal = document.getElementById('storeModal');
     const modalTitle = document.getElementById('modalTitle');
     const modalContent = document.getElementById('modalContent');
-
+    const modalActions = document.getElementById('modalActions');
     modalTitle.textContent = store.name;
     
     const distance = userLocation ? 
@@ -141,40 +118,41 @@ window.showStoreDetail = function(storeId) {
                 <h4 class="font-semibold text-gray-700 mb-2">📍 ที่อยู่</h4>
                 <p class="text-gray-600">${store.address}</p>
             </div>
-            
             <div>
                 <h4 class="font-semibold text-gray-700 mb-2">📞 เบอร์โทร</h4>
                 <p class="text-gray-600">${store.phone}</p>
             </div>
-            
             <div>
                 <h4 class="font-semibold text-gray-700 mb-2">🕒 เวลาทำการ</h4>
                 <p class="text-gray-600">${store.hours}</p>
             </div>
-            
             ${distance ? `
             <div>
                 <h4 class="font-semibold text-gray-700 mb-2">📏 ระยะทาง</h4>
                 <p class="text-blue-600 font-medium">${distance.toFixed(1)} กิโลเมตร</p>
             </div>
             ` : ''}
-            
             <div>
-                <h4 class="font-semibold text-gray-700 mb-2">🛎️ บริการ</h4>
+                <h4 class="font-semibold text-gray-700 mb-2">👨‍🍳 บริการ</h4>
                 <div class="flex flex-wrap gap-2">
                     ${store.services.map(service => 
                         `<span class="bg-red-100 text-red-600 px-3 py-1 rounded-full text-sm">${service}</span>`
                     ).join('')}
                 </div>
             </div>
-            
-            <div class="pt-4 border-t">
-                <button onclick="focusOnStore(${store.id})" 
-                        class="w-full bg-red-600 text-white py-3 rounded-lg font-medium hover:bg-red-700 transition-colors">
-                    📍 ดูบนแผนที่
-                </button>
-            </div>
         </div>
+    `;
+
+    // เพิ่มปุ่ม Google Maps และปุ่มดูบนแผนที่
+    modalActions.innerHTML = `
+        <button onclick="focusOnStore(${store.id})" 
+            class="w-full bg-red-600 text-white py-3 rounded-lg font-medium hover:bg-red-700 transition-colors">
+            📍 ดูบนแผนที่
+        </button>
+        <a href="https://www.google.com/maps/search/?api=1&query=${store.lat},${store.lng}" target="_blank"
+            class="w-full bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700 transition-colors text-center block mt-2">
+            🚗 Google Maps
+        </a>
     `;
 
     modal.classList.remove('hidden');
@@ -186,7 +164,6 @@ window.focusOnStore = function(storeId) {
     const store = stores.find(s => s.id === storeId);
     if (store) {
         map.setView([store.lat, store.lng], 16);
-        // Close modal
         document.getElementById('storeModal').classList.add('hidden');
         document.getElementById('storeModal').classList.remove('flex');
     }
@@ -194,7 +171,7 @@ window.focusOnStore = function(storeId) {
 
 // Calculate distance between two points
 function calculateDistance(lat1, lng1, lat2, lng2) {
-    const R = 6371; // Earth's radius in km
+    const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLng = (lng2 - lng1) * Math.PI / 180;
     const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
@@ -207,6 +184,7 @@ function calculateDistance(lat1, lng1, lat2, lng2) {
 // Find nearest stores
 function findNearMe() {
     if (navigator.geolocation) {
+        showLoading(true);
         navigator.geolocation.getCurrentPosition(
             (position) => {
                 userLocation = {
@@ -214,7 +192,6 @@ function findNearMe() {
                     lng: position.coords.longitude
                 };
 
-                // Add user location marker
                 L.marker([userLocation.lat, userLocation.lng], {
                     icon: L.divIcon({
                         className: 'bg-blue-500 rounded-full w-4 h-4 border-2 border-white shadow-lg',
@@ -223,19 +200,19 @@ function findNearMe() {
                     })
                 }).addTo(map).bindPopup('📍 ตำแหน่งของคุณ');
 
-                // Center map on user location
                 map.setView([userLocation.lat, userLocation.lng], 14);
 
-                // Sort stores by distance and update list
                 const sortedStores = stores.map(store => ({
                     ...store,
                     distance: calculateDistance(userLocation.lat, userLocation.lng, store.lat, store.lng)
                 })).sort((a, b) => a.distance - b.distance);
 
                 populateStoreList(sortedStores);
+                showLoading(false);
             },
             (error) => {
                 alert('ไม่สามารถหาตำแหน่งของคุณได้ กรุณาอนุญาตการเข้าถึงตำแหน่ง');
+                showLoading(false);
             }
         );
     } else {
@@ -243,17 +220,43 @@ function findNearMe() {
     }
 }
 
+// Filter by service
+function getSelectedServices() {
+    const checkboxes = document.querySelectorAll('.service-filter:checked');
+    return Array.from(checkboxes).map(cb => cb.value);
+}
+
 // Search functionality
 function setupSearch() {
     const searchInput = document.getElementById('searchInput');
-    searchInput.addEventListener('input', (e) => {
-        const searchTerm = e.target.value.toLowerCase();
-        const filteredStores = stores.filter(store => 
-            store.name.toLowerCase().includes(searchTerm) ||
-            store.address.toLowerCase().includes(searchTerm)
-        );
-        populateStoreList(filteredStores);
+    const clearBtn = document.getElementById('clearSearch');
+    searchInput.addEventListener('input', filterAndShow);
+    clearBtn.addEventListener('click', () => {
+        searchInput.value = '';
+        filterAndShow();
+        searchInput.focus();
     });
+
+    // Filter by service
+    document.getElementById('serviceFilters')?.addEventListener('change', filterAndShow);
+
+    function filterAndShow() {
+        const searchTerm = searchInput.value.trim().toLowerCase();
+        const selectedServices = getSelectedServices();
+        let filtered = stores.filter(store => {
+            // ค้นหาด้วยชื่อ, ที่อยู่, หรือบริการ
+            const matchText = (
+                store.name.toLowerCase().includes(searchTerm) ||
+                store.address.toLowerCase().includes(searchTerm) ||
+                store.services.some(s => s.toLowerCase().includes(searchTerm))
+            );
+            // filter ด้วยบริการ
+            const matchService = selectedServices.length === 0 ||
+                selectedServices.every(sv => store.services.includes(sv));
+            return matchText && matchService;
+        });
+        populateStoreList(filtered);
+    }
 }
 
 // Event listeners
@@ -262,8 +265,6 @@ document.getElementById('closeModal').addEventListener('click', () => {
     document.getElementById('storeModal').classList.add('hidden');
     document.getElementById('storeModal').classList.remove('flex');
 });
-
-// Close modal when clicking outside
 document.getElementById('storeModal').addEventListener('click', (e) => {
     if (e.target.id === 'storeModal') {
         document.getElementById('storeModal').classList.add('hidden');
@@ -271,9 +272,55 @@ document.getElementById('storeModal').addEventListener('click', (e) => {
     }
 });
 
-// Initialize app
+// เพิ่ม filter ด้วยบริการ
+function renderServiceFilters() {
+    const container = document.createElement('div');
+    container.id = 'serviceFilters';
+    container.className = 'flex flex-wrap gap-2 mt-2 mb-2';
+    const services = ['Dine In', 'Take Away', 'Drive Thru', 'Delivery'];
+    services.forEach(service => {
+        const id = 'filter-' + service.replace(/\s/g, '');
+        container.innerHTML += `
+            <label class="flex items-center gap-1 text-xs bg-gray-100 px-2 py-1 rounded">
+                <input type="checkbox" class="service-filter" value="${service}" id="${id}">
+                ${service}
+            </label>
+        `;
+    });
+    const storeListSection = document.getElementById('storeList').parentElement;
+    storeListSection.insertBefore(container, storeListSection.firstChild);
+}
+
+// โหลดข้อมูล stores.json แล้ว initialize app
 document.addEventListener('DOMContentLoaded', () => {
-    initMap();
-    populateStoreList();
-    setupSearch();
+    showLoading(true);
+    fetch('stores.json')
+        .then(res => res.json())
+        .then(data => {
+            stores = data.map((item, idx) => ({
+                id: item.ID || idx + 1,
+                name: item.Display_Name || item.Storename_Thai || item.Storename_Eng || '',
+                address: item.Address || '',
+                phone: item.Cellphone || '',
+                hours: item.Weekday_Mon_Fri || item.Weekend_Sat_Sun || '',
+                lat: item.Latitude,
+                lng: item.Longitude,
+                services: [
+                    item.Dine_In === 'Yes' ? 'Dine In' : null,
+                    item.Take_Away === 'Yes' ? 'Take Away' : null,
+                    item.Drive_Thru === 'Yes' ? 'Drive Thru' : null,
+                    item.Home_Service === 'Yes' ? 'Delivery' : null
+                ].filter(Boolean)
+            }));
+            initMap();
+            renderServiceFilters();
+            populateStoreList();
+            setupSearch();
+            showLoading(false);
+        })
+        .catch(err => {
+            alert('เกิดข้อผิดพลาดในการโหลดข้อมูลสาขา');
+            showLoading(false);
+            console.error(err);
+        });
 });
